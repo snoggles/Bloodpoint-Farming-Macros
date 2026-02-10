@@ -45,10 +45,10 @@ class KeyBinding {
     }
 
     class Killer {
-        static w => InputMapping.getMapping().bindingFor("MoveForwardKiller", 1)
-        static s => InputMapping.getMapping().bindingFor("MoveForwardKiller", -1)
-        static a => InputMapping.getMapping().bindingFor("MoveRightKiller", -1)
-        static d => InputMapping.getMapping().bindingFor("MoveRightKiller", 1)
+        static moveForward => InputMapping.getMapping().bindingFor("MoveForwardKiller", 1)
+        static moveBack => InputMapping.getMapping().bindingFor("MoveForwardKiller", -1)
+        static moveLeft => InputMapping.getMapping().bindingFor("MoveRightKiller", -1)
+        static moveRight => InputMapping.getMapping().bindingFor("MoveRightKiller", 1)
     }
 }
 
@@ -61,15 +61,23 @@ class InputMapping {
      */
     ahkKeys := Map()
 
-    static cache := Map()
+    /**
+     * DBD process path -> InputMapping
+     */
+    static pathCache := Map()
+
+    /**
+     * Gets the InputMapping for the current DBD process.
+     * Caches the mappings until the macro is restarted.
+     */
     static getMapping() {
         dbdPath := WinGetProcessPath(dbdWinTitle)
-        if not InputMapping.cache.Has(dbdPath) {
+        if not InputMapping.pathCache.Has(dbdPath) {
             mapping := InputMapping.parseMappingFor(dbdPath)
-            InputMapping.cache[dbdPath] := mapping
+            InputMapping.pathCache[dbdPath] := mapping
             return mapping
         } else {
-            return InputMapping.cache[dbdPath]
+            return InputMapping.pathCache[dbdPath]
         }
     }
 
@@ -95,7 +103,7 @@ class InputMapping {
      * 
      * @param name DBD ActionName/AxisName
      * @param scale 1 or -1 for AxisName values
-     * @returns {String} 
+     * @returns {Object}
      */
     bindingFor(name, scale?) {
         key := IsSet(scale) ? this.ahkKeys.Get(InputMapping.bindingKey(name, scale)) : InputMapping.bindingKey(name)
@@ -116,7 +124,6 @@ class InputMapping {
 
         return IsSet(scale) ? name "__" scale : name
     }
-
 
     __New(path) {
         lines := StrSplit(IniRead(path, "/Script/EnhancedInput.EnhancedPlayerInput"), "`n")
@@ -184,14 +191,15 @@ class InputMapping {
         ; Preserve only the AHK versions.
         ahkKeys := Map()
         for k, binding in bindings {
-            ahkKey := InputMapping.dbdKeyToAhkKey(binding["Key"])
+            dbdKey := binding["Key"]
+            ahkKey := InputMapping.dbdMappingToAhkKey(dbdKey)
             ahkKeys[k] := ahkKey
         }
         this.ahkKeys := ahkKeys
 
     }
 
-    static dbdKeyToAhkKey(unreal) {
+    static dbdMappingToAhkKey(dbdMapping) {
         static mapping := Map(
             "Backslash", "\",
             "SpaceBar", "Space",
@@ -212,21 +220,33 @@ class InputMapping {
             "Zero", 0,
         )
 
-        key := unreal["Key"]
+        key := dbdMapping["Key"]
 
-        if StrStartsWith(key, "Gamepad")
-            return false
+        modifiers := ""
+        if dbdMapping["bShift"]
+            modifiers .= "+"
+        if dbdMapping["bCtrl"]
+            modifiers .= "^"
+        if dbdMapping["bAlt"]
+            modifiers .= "!"
+        if dbdMapping["bCmd"]
+            modifiers .= "#"
 
-        prefix := ""
-        if unreal["bShift"]
-            prefix .= "+"
-        if unreal["bCtrl"]
-            prefix .= "^"
-        if unreal["bAlt"]
-            prefix .= "!"
-        if unreal["bCmd"]
-            prefix .= "#"
+        rawKey := modifiers mapping.Get(key, key)
+        return InputMapping.AhkKey(rawKey)
+    }
 
-        return prefix mapping.Get(key, key)
+    /**
+     * Wraps a key value to Send().
+     * Convenience down/up options, plus wrappings with curly braces (required for special keys).
+     * I would otherwise forget to include them and wonder why it's literally sending each letter of "LButton" instead of clicking.
+     */
+    class AhkKey {
+        __New(rawKey) {
+            this.key := "{" rawKey "}"
+            this.down := "{" rawKey " down}"
+            this.up := "{" rawKey " up}"
+            this.rawKey := rawKey
+        }
     }
 }
